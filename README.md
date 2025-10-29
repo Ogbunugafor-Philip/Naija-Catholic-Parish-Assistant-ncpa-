@@ -130,6 +130,9 @@ pip install streamlit psycopg2-binary
 
 iii.	Open your app.py and paste the below code;
 
+[admin_web_code](https://github.com/Ogbunugafor-Philip/Naija-Catholic-Parish-Assistant-ncpa-/blob/main/Admin%20Web%20Code)
+
+
 iv.	View the admin webpage with the below address
 ```
 http://<localhost>:8501/
