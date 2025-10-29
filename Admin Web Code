@@ -1,0 +1,568 @@
+import streamlit as st
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import generate_password_hash, check_password_hash
+import pandas as pd
+from datetime import datetime
+
+st.set_page_config(page_title="NCPA - Parish Portal", page_icon="⛪", layout="wide", initial_sidebar_state="collapsed")
+
+# CSS + JAVASCRIPT FIX
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    #MainMenu, footer, header {visibility: hidden;}
+    .main { background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 50%, #0f1419 100%); color: #ffffff; min-height: 100vh; }
+    
+    .brand-bar {
+        background: rgba(26, 31, 46, 0.85);
+        backdrop-filter: blur(20px);
+        padding: 2rem;
+        margin: -2rem -2rem 3rem -2rem;
+        border-bottom: 3px solid;
+        border-image: linear-gradient(90deg, #2dd4bf, #3b82f6, #2dd4bf) 1;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .brand-bar h1 { color: #ffffff; font-size: 2.2rem; font-weight: 800; margin: 0; }
+    .brand-bar p { color: #cbd5e0; font-size: 1.1rem; margin: 0.5rem 0 0 0; font-weight: 500; }
+    .auth-wrapper { max-width: 1200px; margin: 3rem auto; padding: 0 1rem; }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        background: rgba(26, 31, 46, 0.8);
+        backdrop-filter: blur(10px);
+        border-radius: 16px 16px 0 0;
+        padding: 0;
+        gap: 0;
+        border-bottom: 3px solid;
+        border-image: linear-gradient(90deg, #2dd4bf, #3b82f6) 1;
+    }
+    .stTabs [data-baseweb="tab"] { height: 70px; background: transparent; color: #a0aec0; font-size: 1.1rem; font-weight: 600; padding: 0 3rem; }
+    .stTabs [aria-selected="true"] { color: #2dd4bf; background: rgba(45, 212, 191, 0.1); font-weight: 700; }
+    .stTabs [data-baseweb="tab-panel"] {
+        background: rgba(37, 45, 61, 0.8);
+        backdrop-filter: blur(15px);
+        padding: 3rem;
+        border-radius: 0 0 16px 16px;
+        border: 1px solid rgba(45, 212, 191, 0.2);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    
+    .form-section { max-width: 650px; margin: 0 auto; }
+    .form-title { font-size: 2.2rem; font-weight: 800; color: #2dd4bf; margin-bottom: 0.5rem; }
+    .form-subtitle { color: #cbd5e0; margin-bottom: 2.5rem; font-size: 1.1rem; font-weight: 500; }
+    
+    .stTextInput > label, .stTextArea > label, .stSelectbox > label {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stTextInput > div > div > input, .stTextArea > div > div > textarea {
+        border: 2px solid rgba(45, 212, 191, 0.3) !important;
+        border-radius: 12px !important;
+        padding: 1rem 1.2rem !important;
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+        background: rgba(26, 31, 46, 0.8) !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    .stTextInput > div > div > input::placeholder, .stTextArea > div > div > textarea::placeholder {
+        color: #718096 !important;
+    }
+    
+    .stButton > button {
+        background: linear-gradient(90deg, #2dd4bf, #3b82f6) !important;
+        color: #0f1419 !important;
+        border: none !important;
+        padding: 1.1rem 2rem !important;
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+        box-shadow: 0 4px 15px rgba(45, 212, 191, 0.3);
+    }
+    .stButton > button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(45, 212, 191, 0.4);
+        background: linear-gradient(90deg, #14b8a6, #2563eb) !important;
+    }
+    
+    .stSuccess { background: rgba(16, 185, 129, 0.15) !important; border-left: 4px solid #10b981 !important; color: #ffffff !important; padding: 1.2rem !important; border-radius: 12px; font-weight: 600 !important; }
+    .stError { background: rgba(239, 68, 68, 0.15) !important; border-left: 4px solid #ef4444 !important; color: #ffffff !important; padding: 1.2rem !important; border-radius: 12px; font-weight: 600 !important; }
+    .stInfo { background: rgba(59, 130, 246, 0.15) !important; border-left: 4px solid #3b82f6 !important; color: #ffffff !important; padding: 1.2rem !important; border-radius: 12px; font-weight: 600 !important; }
+    
+    .dashboard-header {
+        background: rgba(26, 31, 46, 0.85);
+        backdrop-filter: blur(20px);
+        padding: 2.5rem;
+        border-radius: 20px;
+        border: 2px solid #2dd4bf;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    .dashboard-header h2 { color: #ffffff; font-size: 2.5rem; font-weight: 800; margin: 0 0 0.5rem 0; }
+    .dashboard-header .address { color: #cbd5e0; font-size: 1.1rem; margin: 0; font-weight: 500; }
+    
+    .stat-card {
+        background: rgba(26, 31, 46, 0.8);
+        backdrop-filter: blur(10px);
+        padding: 2rem;
+        border-radius: 16px;
+        border: 2px solid rgba(45, 212, 191, 0.3);
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(45, 212, 191, 0.3); border-color: #2dd4bf; }
+    .stat-label { color: #a0aec0; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1rem; }
+    .stat-number { color: #2dd4bf; font-size: 3rem; font-weight: 800; line-height: 1; text-shadow: 0 2px 10px rgba(45, 212, 191, 0.3); }
+    
+    .content-card {
+        background: rgba(26, 31, 46, 0.8);
+        backdrop-filter: blur(15px);
+        padding: 2.5rem;
+        border-radius: 20px;
+        border: 2px solid rgba(45, 212, 191, 0.2);
+        height: 100%;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    }
+    .content-card h3 { color: #ffffff; font-size: 1.6rem; font-weight: 700; margin: 0 0 2rem 0; padding-bottom: 0.5rem; border-bottom: 2px solid rgba(45, 212, 191, 0.3); }
+    
+    .logout-container button {
+        background: linear-gradient(90deg, #ef4444, #dc2626) !important;
+        color: white !important;
+        padding: 0.9rem 2rem !important;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+    }
+    .stDownloadButton > button {
+        background: linear-gradient(90deg, #10b981, #059669) !important;
+        color: white !important;
+        font-weight: 700 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    }
+    .stForm { border: none !important; padding: 0 !important; background: transparent !important; }
+    </style>
+    
+    <script>
+    // Force white text on selectbox after load
+    function forceWhiteText() {
+        const selectboxes = document.querySelectorAll('[data-baseweb="select"]');
+        selectboxes.forEach(box => {
+            box.style.color = '#ffffff';
+            const allElements = box.querySelectorAll('*');
+            allElements.forEach(el => {
+                el.style.color = '#ffffff';
+                el.style.setProperty('color', '#ffffff', 'important');
+            });
+        });
+    }
+    
+    // Run multiple times to ensure it works
+    setTimeout(forceWhiteText, 100);
+    setTimeout(forceWhiteText, 500);
+    setTimeout(forceWhiteText, 1000);
+    setInterval(forceWhiteText, 2000);
+    
+    // Run on any DOM change
+    const observer = new MutationObserver(forceWhiteText);
+    observer.observe(document.body, { childList: true, subtree: true });
+    </script>
+""", unsafe_allow_html=True)
+
+DB_CONFIG = {'host': 'localhost', 'database': 'db_name', 'user': '<db_user>', 'password': 'db_password'}
+
+def get_db_connection():
+    return psycopg2.connect(**DB_CONFIG)
+
+HOURS = [f"{i:02d}" for i in range(1, 13)]
+MINUTES = ["00", "15", "30", "45"]
+AM_PM = ["AM", "PM"]
+
+def format_time(hour, minute, am_pm):
+    return f"{hour}:{minute} {am_pm}"
+
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'parish_email' not in st.session_state:
+    st.session_state.parish_email = None
+if 'parish_name' not in st.session_state:
+    st.session_state.parish_name = None
+if 'parish_address' not in st.session_state:
+    st.session_state.parish_address = None
+
+if not st.session_state.logged_in:
+    st.markdown('<div class="brand-bar"><h1>⛪ NCPA – Naija Catholic Parish Assistant</h1><p>Parish Management Portal</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="auth-wrapper">', unsafe_allow_html=True)
+    
+    login_tab, register_tab = st.tabs(["Login", "Register New Parish"])
+    
+    with login_tab:
+        st.markdown('<div class="form-section"><div class="form-title">Welcome Back</div><div class="form-subtitle">Sign in to your parish account</div>', unsafe_allow_html=True)
+        with st.form("login_form", clear_on_submit=True):
+            email = st.text_input("Email Address", placeholder="your-email@parish.com")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_login = st.form_submit_button("Sign In")
+            if submit_login:
+                if not email or not password:
+                    st.error("Please enter both email and password")
+                else:
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor(cursor_factory=RealDictCursor)
+                        cur.execute('SELECT * FROM parish_registration WHERE email = %s', (email,))
+                        parish = cur.fetchone()
+                        cur.close()
+                        conn.close()
+                        if parish and check_password_hash(parish['password'], password):
+                            st.session_state.logged_in = True
+                            st.session_state.parish_email = email
+                            st.session_state.parish_name = parish['parish_name']
+                            st.session_state.parish_address = parish['parish_address']
+                            st.success(f"Welcome back, {parish['parish_name']}!")
+                            st.rerun()
+                        else:
+                            st.error("Invalid email or password")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with register_tab:
+        st.markdown('<div class="form-section"><div class="form-title">Create Parish Account</div><div class="form-subtitle">Register your parish to start managing schedules</div>', unsafe_allow_html=True)
+        with st.form("registration_form"):
+            parish_name = st.text_input("Parish Name", placeholder="St. Mary's Catholic Church")
+            parish_address = st.text_area("Parish Address", placeholder="Complete address", height=100)
+            col1, col2 = st.columns(2)
+            with col1:
+                state = st.text_input("State", placeholder="e.g., Kano")
+            with col2:
+                local_government = st.text_input("Local Government", placeholder="e.g., Municipal")
+            col1, col2 = st.columns(2)
+            with col1:
+                email = st.text_input("Email Address", placeholder="parish@example.com")
+            with col2:
+                phone_number = st.text_input("Phone Number", placeholder="080xxxxxxxx")
+            col1, col2 = st.columns(2)
+            with col1:
+                password = st.text_input("Password", type="password", placeholder="Min. 6 characters")
+            with col2:
+                confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter password")
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_register = st.form_submit_button("Create Account")
+            if submit_register:
+                if not all([parish_name, parish_address, state, local_government, email, phone_number, password]):
+                    st.error("All fields are required")
+                elif password != confirm_password:
+                    st.error("Passwords do not match")
+                elif len(password) < 6:
+                    st.error("Password must be at least 6 characters")
+                else:
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute('SELECT email FROM parish_registration WHERE email = %s', (email,))
+                        if cur.fetchone():
+                            st.error("Email already registered")
+                        else:
+                            hashed_password = generate_password_hash(password)
+                            cur.execute('INSERT INTO parish_registration (parish_name, parish_address, state, local_government, email, phone_number, password) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                                      (parish_name, parish_address, state, local_government, email, phone_number, hashed_password))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                            st.success("Registration successful! Please switch to Login tab")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+else:
+    st.markdown('<div class="dashboard-header">', unsafe_allow_html=True)
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.markdown(f'<h2>⛪ {st.session_state.parish_name}</h2><p class="address">{st.session_state.parish_address}</p>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="logout-container">', unsafe_allow_html=True)
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.parish_email = None
+            st.session_state.parish_name = None
+            st.session_state.parish_address = None
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT COUNT(*) FROM masses WHERE parish_email = %s', (st.session_state.parish_email,))
+        mass_count = cur.fetchone()[0]
+        cur.execute('SELECT COUNT(*) FROM confessions WHERE parish_email = %s', (st.session_state.parish_email,))
+        confession_count = cur.fetchone()[0]
+        cur.execute('SELECT COUNT(*) FROM priest_availability WHERE parish_email = %s', (st.session_state.parish_email,))
+        availability_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown(f'<div class="stat-card"><div class="stat-label">Masses</div><div class="stat-number">{mass_count}</div></div>', unsafe_allow_html=True)
+        with col2:
+            st.markdown(f'<div class="stat-card"><div class="stat-label">Confessions</div><div class="stat-number">{confession_count}</div></div>', unsafe_allow_html=True)
+        with col3:
+            st.markdown(f'<div class="stat-card"><div class="stat-label">Availability</div><div class="stat-number">{availability_count}</div></div>', unsafe_allow_html=True)
+        with col4:
+            st.markdown(f'<div class="stat-card"><div class="stat-label">Total</div><div class="stat-number">{mass_count + confession_count + availability_count}</div></div>', unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    mass_tab, conf_tab, avail_tab, admin_tab = st.tabs(["Mass Schedules", "Confessions", "Priest Availability", "Admin"])
+    
+    with mass_tab:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown('<div class="content-card"><h3>Add Mass Schedule</h3>', unsafe_allow_html=True)
+            with st.form("add_mass"):
+                day = st.selectbox("Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+                st.write("**Start Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    start_hour = st.selectbox("Hour", HOURS, key="mass_start_hour")
+                with col_b:
+                    start_min = st.selectbox("Min", MINUTES, key="mass_start_min")
+                with col_c:
+                    start_ampm = st.selectbox("AM/PM", AM_PM, key="mass_start_ampm")
+                st.write("**End Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    end_hour = st.selectbox("Hour", HOURS, key="mass_end_hour")
+                with col_b:
+                    end_min = st.selectbox("Min", MINUTES, key="mass_end_min")
+                with col_c:
+                    end_ampm = st.selectbox("AM/PM", AM_PM, key="mass_end_ampm")
+                if st.form_submit_button("Add Mass"):
+                    start_time = format_time(start_hour, start_min, start_ampm)
+                    end_time = format_time(end_hour, end_min, end_ampm)
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute('INSERT INTO masses (parish_email, day_of_week, start_time, end_time) VALUES (%s, %s, %s, %s)',
+                                  (st.session_state.parish_email, day, start_time, end_time))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        st.success("Mass added!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="content-card"><h3>Your Mass Schedules</h3>', unsafe_allow_html=True)
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute('''SELECT ctid, day_of_week, start_time, end_time FROM masses WHERE parish_email = %s 
+                             ORDER BY CASE day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 
+                             WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 WHEN 'Sunday' THEN 7 END, start_time''',
+                          (st.session_state.parish_email,))
+                masses = cur.fetchall()
+                cur.close()
+                conn.close()
+                if masses:
+                    for mass in masses:
+                        col_a, col_b = st.columns([4, 1])
+                        with col_a:
+                            st.write(f"**{mass['day_of_week']}**: {mass['start_time']} - {mass['end_time']}")
+                        with col_b:
+                            if st.button("🗑️", key=f"del_mass_{mass['ctid']}", help="Delete"):
+                                conn = get_db_connection()
+                                cur = conn.cursor()
+                                cur.execute("DELETE FROM masses WHERE ctid = %s AND parish_email = %s", (mass['ctid'], st.session_state.parish_email))
+                                conn.commit()
+                                cur.close()
+                                conn.close()
+                                st.rerun()
+                else:
+                    st.info("No masses scheduled yet")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    with conf_tab:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown('<div class="content-card"><h3>Add Confession Time</h3>', unsafe_allow_html=True)
+            with st.form("add_conf"):
+                day = st.selectbox("Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], key="conf_day")
+                st.write("**Start Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    start_hour = st.selectbox("Hour", HOURS, key="conf_start_hour")
+                with col_b:
+                    start_min = st.selectbox("Min", MINUTES, key="conf_start_min")
+                with col_c:
+                    start_ampm = st.selectbox("AM/PM", AM_PM, key="conf_start_ampm")
+                st.write("**End Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    end_hour = st.selectbox("Hour", HOURS, key="conf_end_hour")
+                with col_b:
+                    end_min = st.selectbox("Min", MINUTES, key="conf_end_min")
+                with col_c:
+                    end_ampm = st.selectbox("AM/PM", AM_PM, key="conf_end_ampm")
+                if st.form_submit_button("Add Confession"):
+                    start_time = format_time(start_hour, start_min, start_ampm)
+                    end_time = format_time(end_hour, end_min, end_ampm)
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute('INSERT INTO confessions (parish_email, day_of_week, start_time, end_time) VALUES (%s, %s, %s, %s)',
+                                  (st.session_state.parish_email, day, start_time, end_time))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        st.success("Confession time added!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="content-card"><h3>Confession Schedules</h3>', unsafe_allow_html=True)
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute('''SELECT ctid, day_of_week, start_time, end_time FROM confessions WHERE parish_email = %s 
+                             ORDER BY CASE day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 
+                             WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 WHEN 'Sunday' THEN 7 END, start_time''',
+                          (st.session_state.parish_email,))
+                confs = cur.fetchall()
+                cur.close()
+                conn.close()
+                if confs:
+                    for conf in confs:
+                        col_a, col_b = st.columns([4, 1])
+                        with col_a:
+                            st.write(f"**{conf['day_of_week']}**: {conf['start_time']} - {conf['end_time']}")
+                        with col_b:
+                            if st.button("🗑️", key=f"del_conf_{conf['ctid']}", help="Delete"):
+                                conn = get_db_connection()
+                                cur = conn.cursor()
+                                cur.execute("DELETE FROM confessions WHERE ctid = %s AND parish_email = %s", (conf['ctid'], st.session_state.parish_email))
+                                conn.commit()
+                                cur.close()
+                                conn.close()
+                                st.rerun()
+                else:
+                    st.info("No confession times scheduled yet")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    with avail_tab:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown('<div class="content-card"><h3>Add Availability</h3>', unsafe_allow_html=True)
+            with st.form("add_avail"):
+                day = st.selectbox("Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], key="avail_day")
+                st.write("**Start Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    start_hour = st.selectbox("Hour", HOURS, key="avail_start_hour")
+                with col_b:
+                    start_min = st.selectbox("Min", MINUTES, key="avail_start_min")
+                with col_c:
+                    start_ampm = st.selectbox("AM/PM", AM_PM, key="avail_start_ampm")
+                st.write("**End Time**")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    end_hour = st.selectbox("Hour", HOURS, key="avail_end_hour")
+                with col_b:
+                    end_min = st.selectbox("Min", MINUTES, key="avail_end_min")
+                with col_c:
+                    end_ampm = st.selectbox("AM/PM", AM_PM, key="avail_end_ampm")
+                if st.form_submit_button("Add Availability"):
+                    start_time = format_time(start_hour, start_min, start_ampm)
+                    end_time = format_time(end_hour, end_min, end_ampm)
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute('INSERT INTO priest_availability (parish_email, day_of_week, start_time, end_time) VALUES (%s, %s, %s, %s)',
+                                  (st.session_state.parish_email, day, start_time, end_time))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        st.success("Availability added!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="content-card"><h3>Priest Availability</h3>', unsafe_allow_html=True)
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute('''SELECT ctid, day_of_week, start_time, end_time FROM priest_availability WHERE parish_email = %s 
+                             ORDER BY CASE day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 
+                             WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 WHEN 'Sunday' THEN 7 END, start_time''',
+                          (st.session_state.parish_email,))
+                avails = cur.fetchall()
+                cur.close()
+                conn.close()
+                if avails:
+                    for avail in avails:
+                        col_a, col_b = st.columns([4, 1])
+                        with col_a:
+                            st.write(f"**{avail['day_of_week']}**: {avail['start_time']} - {avail['end_time']}")
+                        with col_b:
+                            if st.button("🗑️", key=f"del_avail_{avail['ctid']}", help="Delete"):
+                                conn = get_db_connection()
+                                cur = conn.cursor()
+                                cur.execute("DELETE FROM priest_availability WHERE ctid = %s AND parish_email = %s", (avail['ctid'], st.session_state.parish_email))
+                                conn.commit()
+                                cur.close()
+                                conn.close()
+                                st.rerun()
+                else:
+                    st.info("No availability scheduled yet")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    with admin_tab:
+        st.markdown('<div class="content-card"><h3>Admin Panel</h3>', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            admin_password = st.text_input("Admin Password", type="password", key="admin_pwd")
+            if st.button("Verify & Download", use_container_width=True):
+                if admin_password != "<admin_password>":
+                    st.error("Invalid password")
+                else:
+                    try:
+                        conn = get_db_connection()
+                        cur = conn.cursor(cursor_factory=RealDictCursor)
+                        cur.execute('SELECT parish_name, parish_address, state, local_government, email, phone_number FROM parish_registration ORDER BY parish_name')
+                        parishes = cur.fetchall()
+                        cur.close()
+                        conn.close()
+                        if parishes:
+                            df = pd.DataFrame(parishes)
+                            csv = df.to_csv(index=False)
+                            st.success(f"{len(parishes)} parishes found!")
+                            st.download_button(label="📥 Download CSV File", data=csv, file_name=f'NCPA_Parishes_{datetime.now().strftime("%Y%m%d")}.csv', mime='text/csv', use_container_width=True)
+                        else:
+                            st.info("No parishes yet")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+        st.markdown('</div>', unsafe_allow_html=True)
