@@ -176,7 +176,14 @@ st.markdown("""
     </script>
 """, unsafe_allow_html=True)
 
-DB_CONFIG = {'host': 'localhost', 'database': 'db_name', 'user': '<db_user>', 'password': 'db_password'}
+# ✅ DATABASE CONFIGURATION - FIXED!
+DB_CONFIG = {
+    'host': 'localhost',
+    'database': 'ncpc',
+    'user': 'ncpc',
+    'password': 'ncpc123',
+    'port': 5432
+}
 
 def get_db_connection():
     return psycopg2.connect(**DB_CONFIG)
@@ -564,7 +571,7 @@ else:
         with col2:
             admin_password = st.text_input("Admin Password", type="password", key="admin_pwd")
             if st.button("Verify & Download", use_container_width=True):
-                if admin_password != "<admin_password>":
+                if admin_password != "ncpa2025":
                     st.error("Invalid password")
                 else:
                     try:
