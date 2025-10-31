@@ -244,6 +244,15 @@ if not st.session_state.logged_in:
                 state = st.text_input("State", placeholder="e.g., Kano")
             with col2:
                 local_government = st.text_input("Local Government", placeholder="e.g., Municipal")
+            
+            # GPS Coordinates section
+            st.info("📍 GPS Coordinates (Get from Google Maps: Right-click location → Copy coordinates)")
+            col1, col2 = st.columns(2)
+            with col1:
+                latitude = st.text_input("Latitude", placeholder="e.g., 12.0022")
+            with col2:
+                longitude = st.text_input("Longitude", placeholder="e.g., 8.5919")
+            
             col1, col2 = st.columns(2)
             with col1:
                 email = st.text_input("Email Address", placeholder="parish@example.com")
@@ -257,29 +266,38 @@ if not st.session_state.logged_in:
             st.markdown("<br>", unsafe_allow_html=True)
             submit_register = st.form_submit_button("Create Account")
             if submit_register:
-                if not all([parish_name, parish_address, state, local_government, email, phone_number, password]):
+                if not all([parish_name, parish_address, state, local_government, email, phone_number, password, latitude, longitude]):
                     st.error("All fields are required")
                 elif password != confirm_password:
                     st.error("Passwords do not match")
                 elif len(password) < 6:
                     st.error("Password must be at least 6 characters")
                 else:
+                    # Validate coordinates
                     try:
-                        conn = get_db_connection()
-                        cur = conn.cursor()
-                        cur.execute('SELECT email FROM parish_registration WHERE email = %s', (email,))
-                        if cur.fetchone():
-                            st.error("Email already registered")
+                        lat_float = float(latitude)
+                        lon_float = float(longitude)
+                        if not (-90 <= lat_float <= 90) or not (-180 <= lon_float <= 180):
+                            st.error("Invalid GPS coordinates. Latitude must be between -90 and 90, Longitude between -180 and 180")
                         else:
-                            hashed_password = generate_password_hash(password)
-                            cur.execute('INSERT INTO parish_registration (parish_name, parish_address, state, local_government, email, phone_number, password) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-                                      (parish_name, parish_address, state, local_government, email, phone_number, hashed_password))
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-                            st.success("Registration successful! Please switch to Login tab")
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+                            try:
+                                conn = get_db_connection()
+                                cur = conn.cursor()
+                                cur.execute('SELECT email FROM parish_registration WHERE email = %s', (email,))
+                                if cur.fetchone():
+                                    st.error("Email already registered")
+                                else:
+                                    hashed_password = generate_password_hash(password)
+                                    cur.execute('INSERT INTO parish_registration (parish_name, parish_address, state, local_government, email, phone_number, password, latitude, longitude) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                                              (parish_name, parish_address, state, local_government, email, phone_number, hashed_password, lat_float, lon_float))
+                                    conn.commit()
+                                    cur.close()
+                                    conn.close()
+                                    st.success("Registration successful! Please switch to Login tab")
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+                    except ValueError:
+                        st.error("Invalid GPS coordinates. Please enter valid numbers.")
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -552,7 +570,7 @@ else:
                     try:
                         conn = get_db_connection()
                         cur = conn.cursor(cursor_factory=RealDictCursor)
-                        cur.execute('SELECT parish_name, parish_address, state, local_government, email, phone_number FROM parish_registration ORDER BY parish_name')
+                        cur.execute('SELECT parish_name, parish_address, state, local_government, email, phone_number, latitude, longitude FROM parish_registration ORDER BY parish_name')
                         parishes = cur.fetchall()
                         cur.close()
                         conn.close()
